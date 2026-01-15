@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react';
-import { Upload, FileArchive, Loader2, Download, Sparkles } from 'lucide-react';
+import { useState, useCallback, useRef } from 'react';
+import { Upload, FileArchive, Loader2, Download, Sparkles, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import CodeBlock from './CodeBlock';
+import StreamingOutput from './StreamingOutput';
 import FrameworkSelector, { type Framework } from './FrameworkSelector';
 import { parseZipFile, downloadZip, type ScriptFile } from '@/lib/zipUtils';
+import { streamGenerateScript } from '@/lib/streamApi';
 import { toast } from 'sonner';
 
 const ZipToScript = () => {
@@ -12,8 +14,11 @@ const ZipToScript = () => {
   const [scriptName, setScriptName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<ScriptFile[]>([]);
+  const [streamingText, setStreamingText] = useState('');
   const [generatedFiles, setGeneratedFiles] = useState<ScriptFile[]>([]);
+  const [isComplete, setIsComplete] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const abortRef = useRef(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -66,149 +71,52 @@ const ZipToScript = () => {
     }
 
     setIsProcessing(true);
-    
-    // Simulate generation with demo files
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    setStreamingText('');
+    setGeneratedFiles([]);
+    setIsComplete(false);
+    abortRef.current = false;
 
-    const demoFiles: ScriptFile[] = [
-      {
-        name: 'fxmanifest.lua',
-        path: 'fxmanifest.lua',
-        type: 'lua',
-        content: `fx_version 'cerulean'
-game 'gta5'
+    const seenPaths = new Set<string>();
+    const referenceFiles = uploadedFiles.map(f => ({ path: f.path, content: f.content }));
 
-author 'FiveM Script Generator'
-description '${scriptName} - Generated Script'
-version '1.0.0'
-
-shared_scripts {
-    'config.lua'
-}
-
-client_scripts {
-    'client/main.lua'
-}
-
-server_scripts {
-    'server/main.lua'
-}
-
-lua54 'yes'`,
+    await streamGenerateScript({
+      mode: 'zip',
+      framework,
+      scriptName,
+      referenceFiles,
+      onChunk: (chunk) => {
+        if (abortRef.current) return;
+        setStreamingText(prev => prev + chunk);
       },
-      {
-        name: 'config.lua',
-        path: 'config.lua',
-        type: 'lua',
-        content: `Config = {}
-
--- Framework: ${framework.toUpperCase()}
-Config.Framework = '${framework}'
-
--- Debug mode
-Config.Debug = false
-
--- Main settings
-Config.Settings = {
-    enabled = true,
-    cooldown = 5000,
-}`,
+      onFile: (file) => {
+        if (abortRef.current) return;
+        if (!seenPaths.has(file.path)) {
+          seenPaths.add(file.path);
+          setGeneratedFiles(prev => {
+            const existing = prev.find(f => f.path === file.path);
+            if (existing) {
+              return prev.map(f => f.path === file.path ? file : f);
+            }
+            return [...prev, file];
+          });
+        }
       },
-      {
-        name: 'client/main.lua',
-        path: 'client/main.lua',
-        type: 'lua',
-        content: `-- ${scriptName} Client Script
--- Framework: ${framework.toUpperCase()}
-
-local ${framework === 'esx' ? 'ESX' : framework === 'qbcore' ? 'QBCore' : 'Framework'} = nil
-
-${framework === 'esx' ? `
--- Initialize ESX
-Citizen.CreateThread(function()
-    while ESX == nil do
-        TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
-        Citizen.Wait(0)
-    end
-end)` : framework === 'qbcore' ? `
--- Initialize QBCore
-QBCore = exports['qb-core']:GetCoreObject()` : `
--- Standalone - No framework initialization needed`}
-
--- Main thread
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(0)
-        
-        if Config.Settings.enabled then
-            -- Main logic here
-        end
-    end
-end)
-
--- Event handlers
-RegisterNetEvent('${scriptName}:client:notify')
-AddEventHandler('${scriptName}:client:notify', function(message)
-    ${framework === 'esx' ? `ESX.ShowNotification(message)` : 
-      framework === 'qbcore' ? `QBCore.Functions.Notify(message, 'success')` : 
-      `print('[${scriptName}] ' .. message)`}
-end)`,
+      onDone: () => {
+        setIsProcessing(false);
+        setIsComplete(true);
+        toast.success('Script gerado com sucesso!');
       },
-      {
-        name: 'server/main.lua',
-        path: 'server/main.lua',
-        type: 'lua',
-        content: `-- ${scriptName} Server Script
--- Framework: ${framework.toUpperCase()}
-
-local ${framework === 'esx' ? 'ESX' : framework === 'qbcore' ? 'QBCore' : 'Framework'} = nil
-
-${framework === 'esx' ? `
--- Initialize ESX
-ESX = exports['es_extended']:getSharedObject()` : framework === 'qbcore' ? `
--- Initialize QBCore
-QBCore = exports['qb-core']:GetCoreObject()` : `
--- Standalone - No framework initialization needed`}
-
--- Server callbacks
-${framework === 'esx' ? `
-ESX.RegisterServerCallback('${scriptName}:getData', function(source, cb)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if xPlayer then
-        cb({ success = true })
-    else
-        cb({ success = false })
-    end
-end)` : framework === 'qbcore' ? `
-QBCore.Functions.CreateCallback('${scriptName}:getData', function(source, cb)
-    local Player = QBCore.Functions.GetPlayer(source)
-    if Player then
-        cb({ success = true })
-    else
-        cb({ success = false })
-    end
-end)` : `
--- Standalone callback system
-RegisterNetEvent('${scriptName}:server:getData')
-AddEventHandler('${scriptName}:server:getData', function()
-    local source = source
-    TriggerClientEvent('${scriptName}:client:receiveData', source, { success = true })
-end)`}
-
--- Commands
-RegisterCommand('${scriptName}', function(source, args, rawCommand)
-    if source > 0 then
-        TriggerClientEvent('${scriptName}:client:notify', source, 'Command executed!')
-    end
-end, false)
-
-print('[${scriptName}] Script loaded successfully!')`,
+      onError: (error) => {
+        setIsProcessing(false);
+        toast.error(error);
       },
-    ];
+    });
+  };
 
-    setGeneratedFiles(demoFiles);
+  const handleStop = () => {
+    abortRef.current = true;
     setIsProcessing(false);
-    toast.success('Script gerado com sucesso!');
+    toast.info('Geração interrompida');
   };
 
   const handleDownload = async () => {
@@ -216,6 +124,8 @@ print('[${scriptName}] Script loaded successfully!')`,
     await downloadZip(generatedFiles, scriptName);
     toast.success('Download iniciado!');
   };
+
+  const isGenerating = isProcessing && uploadedFiles.length > 0 && streamingText.length > 0;
 
   return (
     <div className="space-y-6">
@@ -239,7 +149,7 @@ print('[${scriptName}] Script loaded successfully!')`,
         />
         
         <div className="space-y-4">
-          {isProcessing ? (
+          {isProcessing && !isGenerating ? (
             <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin" />
           ) : uploadedFiles.length > 0 ? (
             <FileArchive className="w-12 h-12 mx-auto text-terminal-green" />
@@ -261,7 +171,7 @@ print('[${scriptName}] Script loaded successfully!')`,
       </div>
 
       {/* Settings */}
-      {uploadedFiles.length > 0 && (
+      {uploadedFiles.length > 0 && !isGenerating && !isComplete && (
         <div className="space-y-6 p-6 rounded-xl bg-card border border-border animate-fade-in">
           <div className="space-y-3">
             <label className="text-sm font-medium text-foreground">
@@ -272,37 +182,66 @@ print('[${scriptName}] Script loaded successfully!')`,
               onChange={(e) => setScriptName(e.target.value)}
               placeholder="ex: meu-script"
               className="font-mono bg-secondary/50 border-border focus:border-primary"
+              disabled={isProcessing}
             />
           </div>
 
           <FrameworkSelector value={framework} onChange={setFramework} />
 
-          <Button
-            onClick={handleGenerate}
-            disabled={isProcessing || !scriptName.trim()}
-            className="w-full h-12 font-mono text-base bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Gerando...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-5 h-5 mr-2" />
-                Gerar Script
-              </>
+          <p className="text-xs text-muted-foreground">
+            💡 NUI só será recriado se estiver presente no arquivo original
+          </p>
+
+          <div className="flex gap-3">
+            <Button
+              onClick={handleGenerate}
+              disabled={isProcessing || !scriptName.trim()}
+              className="flex-1 h-12 font-mono text-base bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Gerando...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Gerar Script
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Streaming Output */}
+      {(isGenerating || (streamingText && !isComplete)) && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-end">
+            {isProcessing && (
+              <Button
+                onClick={handleStop}
+                variant="destructive"
+                className="font-mono"
+              >
+                <Square className="w-4 h-4 mr-2" />
+                Parar
+              </Button>
             )}
-          </Button>
+          </div>
+          <StreamingOutput 
+            content={streamingText} 
+            isStreaming={isProcessing} 
+          />
         </div>
       )}
 
       {/* Generated Files */}
-      {generatedFiles.length > 0 && (
+      {isComplete && generatedFiles.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-foreground font-mono">
-              Ficheiros Gerados
+              Ficheiros Gerados ({generatedFiles.length})
             </h3>
             <Button
               onClick={handleDownload}
