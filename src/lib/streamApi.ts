@@ -1,16 +1,25 @@
-import type { ScriptFile } from './zipUtils';
+export interface ScriptFile {
+  name: string;
+  path: string;
+  content: string;
+  type: 'lua' | 'json' | 'sql' | 'html' | 'css' | 'js' | 'other';
+}
 
 const GENERATE_SCRIPT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-script`;
 
 interface GenerateScriptParams {
-  mode: 'zip' | 'text';
+  mode: 'zip' | 'text' | 'image' | 'tebex' | 'video';
   framework: string;
   scriptName: string;
   description?: string;
   referenceFiles?: { path: string; content: string }[];
+  images?: string[];
+  tebexUrl?: string;
+  videoUrl?: string;
+  additionalContext?: string;
   onChunk: (text: string) => void;
   onFile: (file: ScriptFile) => void;
-  onDone: () => void;
+  onComplete: () => void;
   onError: (error: string) => void;
 }
 
@@ -20,112 +29,146 @@ export async function streamGenerateScript({
   scriptName,
   description,
   referenceFiles,
+  images,
+  tebexUrl,
+  videoUrl,
+  additionalContext,
   onChunk,
   onFile,
-  onDone,
+  onComplete,
   onError,
-}: GenerateScriptParams) {
-  try {
-    const response = await fetch(GENERATE_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({
-        mode,
-        framework,
-        scriptName,
-        description,
-        referenceFiles,
-      }),
-    });
+}: GenerateScriptParams): Promise<{ abort: () => void }> {
+  const controller = new AbortController();
+  
+  const processStream = async () => {
+    try {
+      const response = await fetch(GENERATE_SCRIPT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          mode,
+          framework,
+          scriptName,
+          description,
+          referenceFiles,
+          images,
+          tebexUrl,
+          videoUrl,
+          additionalContext,
+        }),
+        signal: controller.signal,
+      });
 
-    if (!response.ok || !response.body) {
-      if (response.status === 429) {
-        onError('Rate limit exceeded. Please try again later.');
+      if (!response.ok || !response.body) {
+        if (response.status === 429) {
+          onError('Rate limit exceeded. Please try again later.');
+          return;
+        }
+        if (response.status === 402) {
+          onError('Payment required. Please add credits.');
+          return;
+        }
+        onError('Failed to start generation');
         return;
       }
-      if (response.status === 402) {
-        onError('Payment required. Please add credits.');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = '';
+      let fullContent = '';
+      let streamDone = false;
+      const emittedPaths = new Set<string>();
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (line.startsWith(':') || line.trim() === '') continue;
+          if (!line.startsWith('data: ')) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') {
+            streamDone = true;
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) {
+              fullContent += content;
+              onChunk(content);
+              
+              // Parse completed files from content
+              const files = parseFilesFromContent(fullContent);
+              files.forEach(file => {
+                if (!emittedPaths.has(file.path)) {
+                  emittedPaths.add(file.path);
+                  onFile(file);
+                }
+              });
+            }
+          } catch {
+            textBuffer = line + '\n' + textBuffer;
+            break;
+          }
+        }
+      }
+
+      // Final flush
+      if (textBuffer.trim()) {
+        for (let raw of textBuffer.split('\n')) {
+          if (!raw) continue;
+          if (raw.endsWith('\r')) raw = raw.slice(0, -1);
+          if (raw.startsWith(':') || raw.trim() === '') continue;
+          if (!raw.startsWith('data: ')) continue;
+          const jsonStr = raw.slice(6).trim();
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) {
+              fullContent += content;
+              onChunk(content);
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // Parse final files
+      const finalFiles = parseFilesFromContent(fullContent);
+      finalFiles.forEach(file => {
+        if (!emittedPaths.has(file.path)) {
+          emittedPaths.add(file.path);
+          onFile(file);
+        }
+      });
+      
+      onComplete();
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        onComplete();
         return;
       }
-      onError('Failed to start generation');
-      return;
+      onError(error instanceof Error ? error.message : 'Unknown error');
     }
+  };
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let textBuffer = '';
-    let fullContent = '';
-    let streamDone = false;
+  processStream();
 
-    while (!streamDone) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      textBuffer += decoder.decode(value, { stream: true });
-
-      let newlineIndex: number;
-      while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
-        let line = textBuffer.slice(0, newlineIndex);
-        textBuffer = textBuffer.slice(newlineIndex + 1);
-
-        if (line.endsWith('\r')) line = line.slice(0, -1);
-        if (line.startsWith(':') || line.trim() === '') continue;
-        if (!line.startsWith('data: ')) continue;
-
-        const jsonStr = line.slice(6).trim();
-        if (jsonStr === '[DONE]') {
-          streamDone = true;
-          break;
-        }
-
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-          if (content) {
-            fullContent += content;
-            onChunk(content);
-            
-            // Parse completed files from content
-            const files = parseFilesFromContent(fullContent);
-            files.forEach(file => onFile(file));
-          }
-        } catch {
-          textBuffer = line + '\n' + textBuffer;
-          break;
-        }
-      }
-    }
-
-    // Final flush
-    if (textBuffer.trim()) {
-      for (let raw of textBuffer.split('\n')) {
-        if (!raw) continue;
-        if (raw.endsWith('\r')) raw = raw.slice(0, -1);
-        if (raw.startsWith(':') || raw.trim() === '') continue;
-        if (!raw.startsWith('data: ')) continue;
-        const jsonStr = raw.slice(6).trim();
-        if (jsonStr === '[DONE]') continue;
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-          if (content) {
-            fullContent += content;
-            onChunk(content);
-          }
-        } catch { /* ignore */ }
-      }
-    }
-
-    // Parse final files
-    const finalFiles = parseFilesFromContent(fullContent);
-    finalFiles.forEach(file => onFile(file));
-    
-    onDone();
-  } catch (error) {
-    onError(error instanceof Error ? error.message : 'Unknown error');
-  }
+  return {
+    abort: () => controller.abort(),
+  };
 }
 
 function parseFilesFromContent(content: string): ScriptFile[] {

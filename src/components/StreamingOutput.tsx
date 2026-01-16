@@ -2,18 +2,18 @@ import { useEffect, useRef } from 'react';
 import { Terminal, Loader2 } from 'lucide-react';
 
 interface StreamingOutputProps {
-  content: string;
-  isStreaming: boolean;
+  text: string;
+  isGenerating: boolean;
 }
 
-const StreamingOutput = ({ content, isStreaming }: StreamingOutputProps) => {
+const StreamingOutput = ({ text, isGenerating }: StreamingOutputProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [content]);
+  }, [text]);
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden animate-fade-in">
@@ -23,7 +23,7 @@ const StreamingOutput = ({ content, isStreaming }: StreamingOutputProps) => {
           <Terminal className="w-4 h-4 text-terminal-green" />
           <span className="font-mono text-sm text-foreground">Geração em progresso</span>
         </div>
-        {isStreaming && (
+        {isGenerating && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
             <span className="font-mono">Escrevendo código...</span>
@@ -37,8 +37,8 @@ const StreamingOutput = ({ content, isStreaming }: StreamingOutputProps) => {
         className="p-4 max-h-[500px] overflow-y-auto scrollbar-thin"
       >
         <pre className="font-mono text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
-          {content}
-          {isStreaming && (
+          {text}
+          {isGenerating && (
             <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />
           )}
         </pre>

@@ -101,7 +101,7 @@ const ZipToScript = () => {
           });
         }
       },
-      onDone: () => {
+      onComplete: () => {
         setIsProcessing(false);
         setIsComplete(true);
         toast.success('Script gerado com sucesso!');
@@ -230,8 +230,8 @@ const ZipToScript = () => {
             )}
           </div>
           <StreamingOutput 
-            content={streamingText} 
-            isStreaming={isProcessing} 
+            text={streamingText} 
+            isGenerating={isProcessing} 
           />
         </div>
       )}

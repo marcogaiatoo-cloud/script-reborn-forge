@@ -43,7 +43,7 @@ serve(async (req) => {
   }
 
   try {
-    const { mode, framework, scriptName, description, referenceFiles } = await req.json();
+    const { mode, framework, scriptName, description, referenceFiles, images, tebexUrl, videoUrl, additionalContext } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
@@ -51,6 +51,7 @@ serve(async (req) => {
     }
 
     let userPrompt = "";
+    let messageContent: any[] = [];
 
     if (mode === "zip") {
       userPrompt = `Recreate this FiveM script for ${framework.toUpperCase()} framework.
@@ -65,7 +66,9 @@ ${f.content}
 Recreate the script with new, clean code that behaves identically to the original.
 Do NOT add NUI unless it exists in the reference.
 Generate each file with ### FILE: and ### END FILE markers.`;
-    } else {
+      messageContent = [{ type: "text", text: userPrompt }];
+      
+    } else if (mode === "text") {
       userPrompt = `Create a new FiveM script for ${framework.toUpperCase()} framework.
 Script name: ${scriptName}
 
@@ -74,6 +77,72 @@ ${description}
 
 IMPORTANT: Only create what is described. Do NOT add NUI, database, or other features unless explicitly mentioned in the description.
 Generate each file with ### FILE: and ### END FILE markers.`;
+      messageContent = [{ type: "text", text: userPrompt }];
+      
+    } else if (mode === "image") {
+      const imageContents = images.map((img: string) => ({
+        type: "image_url",
+        image_url: { url: img }
+      }));
+      
+      userPrompt = `Analyze these images of a FiveM script and recreate it for ${framework.toUpperCase()} framework.
+Script name: ${scriptName}
+
+Look at the images carefully and identify:
+1. UI elements (menus, notifications, prompts)
+2. Gameplay mechanics shown
+3. Commands or interactions visible
+4. Any text, labels, or configurations shown
+
+Recreate the exact functionality shown in the images as a complete, working script.
+Do NOT add NUI unless there's a visible UI in the images that requires it.
+Generate each file with ### FILE: and ### END FILE markers.`;
+
+      messageContent = [
+        { type: "text", text: userPrompt },
+        ...imageContents
+      ];
+      
+    } else if (mode === "tebex") {
+      userPrompt = `I need you to create a FiveM script based on this Tebex/store page: ${tebexUrl}
+
+Framework: ${framework.toUpperCase()}
+Script name: ${scriptName}
+
+Based on the typical features found in such scripts on Tebex stores, create a complete, functional script.
+
+Think about what features would typically be included:
+- Common commands and interactions
+- Configuration options
+- Database structure if needed
+- Client and server logic
+
+Create a professional, production-ready script that would match what's typically sold on Tebex.
+Do NOT add NUI unless it's a script that would clearly need a UI (like a menu, shop, etc).
+Generate each file with ### FILE: and ### END FILE markers.`;
+      messageContent = [{ type: "text", text: userPrompt }];
+      
+    } else if (mode === "video") {
+      userPrompt = `Create a FiveM script based on this video showcase: ${videoUrl}
+
+Framework: ${framework.toUpperCase()}
+Script name: ${scriptName}
+
+${additionalContext ? `Additional context from user:\n${additionalContext}\n` : ''}
+
+Based on typical FiveM script videos and the URL provided, think about:
+1. What type of script this likely is (job, vehicle, menu, etc)
+2. Commands and keybinds typically used
+3. UI elements that might be shown
+4. Interactions between player and game
+
+Create a complete, working script that would produce similar results to what's shown in such videos.
+Do NOT add NUI unless the description clearly mentions a visual UI/menu.
+Generate each file with ### FILE: and ### END FILE markers.`;
+      messageContent = [{ type: "text", text: userPrompt }];
+      
+    } else {
+      throw new Error("Invalid mode");
     }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -86,7 +155,7 @@ Generate each file with ### FILE: and ### END FILE markers.`;
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: FIVEM_SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
+          { role: "user", content: messageContent },
         ],
         stream: true,
       }),
