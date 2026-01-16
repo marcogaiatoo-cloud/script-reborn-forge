@@ -1,7 +1,10 @@
-import { FileArchive, FileText, Terminal, Code2 } from 'lucide-react';
+import { FileArchive, FileText, Terminal, Code2, Image, ShoppingCart, Video } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ZipToScript from '@/components/ZipToScript';
 import TextToScript from '@/components/TextToScript';
+import ImageToScript from '@/components/ImageToScript';
+import TebexToScript from '@/components/TebexToScript';
+import VideoToScript from '@/components/VideoToScript';
 
 const Index = () => {
   return (
@@ -35,7 +38,7 @@ const Index = () => {
       {/* Main Content */}
       <main className="relative container max-w-5xl mx-auto px-4 py-8">
         <Tabs defaultValue="zip" className="space-y-6">
-          <TabsList variant="terminal" className="w-full sm:w-auto">
+          <TabsList variant="terminal" className="w-full flex-wrap h-auto gap-2">
             <TabsTrigger value="zip" variant="terminal" className="flex items-center gap-2">
               <FileArchive className="w-4 h-4" />
               <span>.zip → script</span>
@@ -43,6 +46,18 @@ const Index = () => {
             <TabsTrigger value="text" variant="terminal" className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
               <span>text → script</span>
+            </TabsTrigger>
+            <TabsTrigger value="image" variant="terminal" className="flex items-center gap-2">
+              <Image className="w-4 h-4" />
+              <span>image → script</span>
+            </TabsTrigger>
+            <TabsTrigger value="tebex" variant="terminal" className="flex items-center gap-2">
+              <ShoppingCart className="w-4 h-4" />
+              <span>tebex → script</span>
+            </TabsTrigger>
+            <TabsTrigger value="video" variant="terminal" className="flex items-center gap-2">
+              <Video className="w-4 h-4" />
+              <span>video → script</span>
             </TabsTrigger>
           </TabsList>
 
@@ -75,6 +90,51 @@ const Index = () => {
               <TextToScript />
             </div>
           </TabsContent>
+
+          <TabsContent value="image">
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                <h2 className="font-mono font-semibold text-foreground mb-2">
+                  Modo: Image → Script
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Envie screenshots ou imagens do script em funcionamento. A IA irá analisar 
+                  visualmente e recriar as funcionalidades mostradas nas imagens.
+                </p>
+              </div>
+              <ImageToScript />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="tebex">
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                <h2 className="font-mono font-semibold text-foreground mb-2">
+                  Modo: Tebex → Script
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Cole o link de uma loja Tebex ou CFX.re. O sistema irá analisar a página 
+                  e criar um script com funcionalidades similares às descritas.
+                </p>
+              </div>
+              <TebexToScript />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="video">
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-secondary/30 border border-border">
+                <h2 className="font-mono font-semibold text-foreground mb-2">
+                  Modo: Video → Script
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Cole o link de um vídeo (YouTube, etc.) mostrando o script. A IA irá entender 
+                  o funcionamento baseado no contexto do vídeo e criar o script correspondente.
+                </p>
+              </div>
+              <VideoToScript />
+            </div>
+          </TabsContent>
         </Tabs>
 
         {/* Footer Info */}
@@ -102,11 +162,11 @@ const Index = () => {
             </li>
             <li className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-terminal-green" />
-              Estrutura de pastas profissional
+              Análise de imagens e vídeos com IA
             </li>
             <li className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-terminal-green" />
-              NUI e Database quando necessário
+              Recriação a partir de lojas Tebex
             </li>
           </ul>
         </div>

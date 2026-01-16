@@ -60,7 +60,7 @@ const TextToScript = () => {
           });
         }
       },
-      onDone: () => {
+      onComplete: () => {
         setIsProcessing(false);
         setIsComplete(true);
         toast.success('Script gerado com sucesso!');
@@ -159,8 +159,8 @@ const TextToScript = () => {
       {/* Streaming Output */}
       {(isProcessing || streamingText) && (
         <StreamingOutput 
-          content={streamingText} 
-          isStreaming={isProcessing} 
+          text={streamingText} 
+          isGenerating={isProcessing} 
         />
       )}
 
