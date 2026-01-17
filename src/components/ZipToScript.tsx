@@ -5,12 +5,15 @@ import { Input } from '@/components/ui/input';
 import CodeBlock from './CodeBlock';
 import StreamingOutput from './StreamingOutput';
 import FrameworkSelector, { type Framework } from './FrameworkSelector';
+import PreferencesSelector, { type MySQLType, type LibType } from './PreferencesSelector';
 import { parseZipFile, downloadZip, type ScriptFile } from '@/lib/zipUtils';
 import { streamGenerateScript } from '@/lib/streamApi';
 import { toast } from 'sonner';
 
 const ZipToScript = () => {
   const [framework, setFramework] = useState<Framework>('esx');
+  const [mysqlType, setMysqlType] = useState<MySQLType>('mysql-async');
+  const [libType, setLibType] = useState<LibType>('default');
   const [scriptName, setScriptName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<ScriptFile[]>([]);
@@ -83,6 +86,8 @@ const ZipToScript = () => {
       mode: 'zip',
       framework,
       scriptName,
+      mysqlType,
+      libType,
       referenceFiles,
       onChunk: (chunk) => {
         if (abortRef.current) return;
@@ -187,6 +192,13 @@ const ZipToScript = () => {
           </div>
 
           <FrameworkSelector value={framework} onChange={setFramework} />
+
+          <PreferencesSelector
+            mysqlType={mysqlType}
+            libType={libType}
+            onMySQLChange={setMysqlType}
+            onLibChange={setLibType}
+          />
 
           <p className="text-xs text-muted-foreground">
             💡 NUI só será recriado se estiver presente no arquivo original

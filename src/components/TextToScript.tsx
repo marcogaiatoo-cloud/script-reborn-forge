@@ -6,12 +6,15 @@ import { Input } from '@/components/ui/input';
 import CodeBlock from './CodeBlock';
 import StreamingOutput from './StreamingOutput';
 import FrameworkSelector, { type Framework } from './FrameworkSelector';
+import PreferencesSelector, { type MySQLType, type LibType } from './PreferencesSelector';
 import { downloadZip, type ScriptFile } from '@/lib/zipUtils';
 import { streamGenerateScript } from '@/lib/streamApi';
 import { toast } from 'sonner';
 
 const TextToScript = () => {
   const [framework, setFramework] = useState<Framework>('esx');
+  const [mysqlType, setMysqlType] = useState<MySQLType>('mysql-async');
+  const [libType, setLibType] = useState<LibType>('default');
   const [scriptName, setScriptName] = useState('');
   const [description, setDescription] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -42,6 +45,8 @@ const TextToScript = () => {
       mode: 'text',
       framework,
       scriptName,
+      mysqlType,
+      libType,
       description,
       onChunk: (chunk) => {
         if (abortRef.current) return;
@@ -123,6 +128,13 @@ const TextToScript = () => {
         </div>
 
         <FrameworkSelector value={framework} onChange={setFramework} />
+
+        <PreferencesSelector
+          mysqlType={mysqlType}
+          libType={libType}
+          onMySQLChange={setMysqlType}
+          onLibChange={setLibType}
+        />
 
         <div className="flex gap-3">
           <Button
