@@ -15,11 +15,23 @@ CRITICAL RULES:
 - Do NOT add NUI unless explicitly requested or clearly needed for the functionality
 - Do NOT add dependencies, frameworks, or extras unless present in the reference or explicitly requested
 - Scripts must behave exactly as described
+- ALWAYS use the MySQL library specified by the user (mysql-async or oxmysql)
+- ALWAYS use the lib specified by the user (default natives or ox_lib)
 
 FRAMEWORK SPECIFICS:
 - ESX: Use exports['es_extended']:getSharedObject(), ESX.RegisterServerCallback, ESX.TriggerServerCallback
 - QBCore: Use exports['qb-core']:GetCoreObject(), QBCore.Functions.CreateCallback, QBCore.Functions.TriggerCallback  
 - Standalone: No framework dependencies, use native events and commands
+
+MYSQL LIBRARY SPECIFICS:
+- mysql-async: Use MySQL.Async.fetchAll, MySQL.Async.execute, MySQL.Async.insert, MySQL.Async.fetchScalar
+- oxmysql: Use MySQL.query, MySQL.insert, MySQL.update, MySQL.scalar, exports.oxmysql:...
+
+LIB SPECIFICS:
+- default: Use native FiveM functions, DrawText3D, markers, standard notifications
+- ox_lib: Use lib.callback, lib.notify, lib.progressBar, lib.inputDialog, lib.context, lib.zones, etc.
+  - Add '@ox_lib/init.lua' as shared_script in fxmanifest
+  - Use ox_lib patterns for menus, notifications, progress bars, etc.
 
 FILE STRUCTURE:
 1. fxmanifest.lua - Resource manifest
@@ -203,8 +215,17 @@ serve(async (req) => {
   }
 
   try {
-    const { mode, framework, scriptName, description, referenceFiles, images, tebexUrl, videoUrl, additionalContext } = await req.json();
+    const { mode, framework, scriptName, mysqlType, libType, description, referenceFiles, images, tebexUrl, videoUrl, additionalContext } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    
+    // Build preferences string
+    const mysqlLib = mysqlType || 'mysql-async';
+    const libPreference = libType || 'default';
+    const preferencesInfo = `
+USER PREFERENCES:
+- MySQL Library: ${mysqlLib} (USE THIS for all database operations)
+- Libs: ${libPreference === 'ox_lib' ? 'ox_lib (USE ox_lib functions for UI, callbacks, notifications, progress bars, zones, etc.)' : 'default (USE native FiveM functions)'}
+`;
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
@@ -216,7 +237,7 @@ serve(async (req) => {
     if (mode === "zip") {
       userPrompt = `Recreate this FiveM script for ${framework.toUpperCase()} framework.
 Script name: ${scriptName}
-
+${preferencesInfo}
 Reference files content:
 ${referenceFiles.map((f: { path: string; content: string }) => `
 === ${f.path} ===
@@ -231,7 +252,7 @@ Generate each file with ### FILE: and ### END FILE markers.`;
     } else if (mode === "text") {
       userPrompt = `Create a new FiveM script for ${framework.toUpperCase()} framework.
 Script name: ${scriptName}
-
+${preferencesInfo}
 Description:
 ${description}
 
@@ -256,7 +277,7 @@ Generate each file with ### FILE: and ### END FILE markers.`;
       }
       
       userPrompt = `ANALYZE THESE IMAGES CAREFULLY. They show a FiveM script in action.
-
+${preferencesInfo}
 Look at EVERY detail in the images:
 1. What UI elements are visible? (menus, notifications, HUD, popups)
 2. What text/labels can you read? (commands, button labels, titles)
@@ -297,7 +318,7 @@ Generate each file with ### FILE: and ### END FILE markers.`;
       
       userPrompt = `I have SCRAPED this FiveM script store page. Here is the ACTUAL content from the page.
 ANALYZE EVERYTHING CAREFULLY and recreate this script EXACTLY as described.
-
+${preferencesInfo}
 URL: ${tebexUrl}
 
 PAGE TITLE: ${scrapeResult.title}

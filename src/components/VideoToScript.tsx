@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Play, Square, Video, Download, Youtube } from 'lucide-react';
 import FrameworkSelector, { Framework } from './FrameworkSelector';
+import PreferencesSelector, { type MySQLType, type LibType } from './PreferencesSelector';
 import StreamingOutput from './StreamingOutput';
 import CodeBlock from './CodeBlock';
 import { streamGenerateScript, ScriptFile } from '@/lib/streamApi';
@@ -16,6 +17,8 @@ const VideoToScript = () => {
   const [scriptName, setScriptName] = useState('');
   const [additionalContext, setAdditionalContext] = useState('');
   const [framework, setFramework] = useState<Framework>('esx');
+  const [mysqlType, setMysqlType] = useState<MySQLType>('mysql-async');
+  const [libType, setLibType] = useState<LibType>('default');
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [generatedFiles, setGeneratedFiles] = useState<ScriptFile[]>([]);
@@ -69,6 +72,8 @@ const VideoToScript = () => {
         mode: 'video',
         framework,
         scriptName,
+        mysqlType,
+        libType,
         videoUrl,
         additionalContext,
         onChunk: (text) => setStreamingText(prev => prev + text),
@@ -123,6 +128,13 @@ const VideoToScript = () => {
           />
 
           <FrameworkSelector value={framework} onChange={setFramework} />
+
+          <PreferencesSelector
+            mysqlType={mysqlType}
+            libType={libType}
+            onMySQLChange={setMysqlType}
+            onLibChange={setLibType}
+          />
 
           <div className="space-y-3">
             <label className="text-sm font-medium text-foreground">

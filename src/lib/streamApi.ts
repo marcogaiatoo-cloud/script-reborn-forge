@@ -11,6 +11,8 @@ interface GenerateScriptParams {
   mode: 'zip' | 'text' | 'image' | 'tebex' | 'video';
   framework: string;
   scriptName: string;
+  mysqlType?: 'mysql-async' | 'oxmysql';
+  libType?: 'default' | 'ox_lib';
   description?: string;
   referenceFiles?: { path: string; content: string }[];
   images?: string[];
@@ -27,6 +29,8 @@ export async function streamGenerateScript({
   mode,
   framework,
   scriptName,
+  mysqlType = 'mysql-async',
+  libType = 'default',
   description,
   referenceFiles,
   images,
@@ -52,6 +56,8 @@ export async function streamGenerateScript({
           mode,
           framework,
           scriptName,
+          mysqlType,
+          libType,
           description,
           referenceFiles,
           images,
