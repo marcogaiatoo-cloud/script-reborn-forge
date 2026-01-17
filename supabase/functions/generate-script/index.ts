@@ -37,77 +37,71 @@ Generate production-ready code with:
 - Professional folder structure
 - No placeholder logic`;
 
-// Fetch and extract content from a Tebex/store page
-async function fetchTebexContent(url: string): Promise<{ title: string; description: string; features: string[]; images: string[] }> {
+// Use Firecrawl to scrape Tebex/store pages with full content extraction
+async function scrapeTebexWithFirecrawl(url: string): Promise<{ 
+  markdown: string; 
+  title: string; 
+  description: string; 
+  screenshot?: string;
+  success: boolean;
+}> {
+  const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY');
+  
+  if (!FIRECRAWL_API_KEY) {
+    console.error('FIRECRAWL_API_KEY not configured');
+    return {
+      success: false,
+      markdown: '',
+      title: '',
+      description: 'Firecrawl not configured'
+    };
+  }
+
   try {
-    const response = await fetch(url, {
+    console.log('Scraping with Firecrawl:', url);
+    
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
+        'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: url,
+        formats: ['markdown', 'screenshot'],
+        onlyMainContent: true,
+        waitFor: 3000,
+      }),
     });
+
+    const data = await response.json();
     
-    if (!response.ok) {
-      throw new Error(`Failed to fetch: ${response.status}`);
+    if (!response.ok || !data.success) {
+      console.error('Firecrawl error:', data);
+      return {
+        success: false,
+        markdown: '',
+        title: '',
+        description: data.error || 'Failed to scrape'
+      };
     }
-    
-    const html = await response.text();
-    
-    // Extract title
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim() : '';
-    
-    // Extract meta description
-    const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
-    const metaDesc = metaDescMatch ? metaDescMatch[1].trim() : '';
-    
-    // Extract all text content from common content areas
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    const bodyContent = bodyMatch ? bodyMatch[1] : html;
-    
-    // Remove scripts and styles
-    const cleanContent = bodyContent
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    // Extract features (looking for list items or feature-like content)
-    const features: string[] = [];
-    const featureMatches = html.matchAll(/<li[^>]*>([^<]+)<\/li>/gi);
-    for (const match of featureMatches) {
-      const feature = match[1].trim();
-      if (feature.length > 5 && feature.length < 200) {
-        features.push(feature);
-      }
-    }
-    
-    // Extract images
-    const images: string[] = [];
-    const imgMatches = html.matchAll(/<img[^>]*src=["']([^"']+)["'][^>]*>/gi);
-    for (const match of imgMatches) {
-      const src = match[1];
-      if (src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
-        images.push(src);
-      }
-    }
-    
-    // Limit content
-    const description = cleanContent.slice(0, 3000);
+
+    console.log('Firecrawl scrape successful, markdown length:', data.data?.markdown?.length || 0);
     
     return {
-      title,
-      description: metaDesc || description.slice(0, 500),
-      features: features.slice(0, 20),
-      images: images.slice(0, 5)
+      success: true,
+      markdown: data.data?.markdown || '',
+      title: data.data?.metadata?.title || '',
+      description: data.data?.metadata?.description || '',
+      screenshot: data.data?.screenshot || undefined
     };
   } catch (error) {
-    console.error('Error fetching Tebex page:', error);
+    console.error('Firecrawl error:', error);
     return {
+      success: false,
+      markdown: '',
       title: '',
-      description: `Could not fetch page content. URL: ${url}`,
-      features: [],
-      images: []
+      description: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
@@ -283,52 +277,64 @@ Generate each file with ### FILE: and ### END FILE markers.`;
       ];
       
     } else if (mode === "tebex") {
-      console.log("Fetching Tebex page:", tebexUrl);
+      console.log("Scraping Tebex page with Firecrawl:", tebexUrl);
       
-      // Actually fetch and analyze the Tebex page
-      const tebexContent = await fetchTebexContent(tebexUrl);
+      // Use Firecrawl to get REAL content from the Tebex page
+      const scrapeResult = await scrapeTebexWithFirecrawl(tebexUrl);
       
-      console.log("Tebex content fetched:", {
-        title: tebexContent.title,
-        featuresCount: tebexContent.features.length,
-        imagesCount: tebexContent.images.length
+      if (!scrapeResult.success) {
+        console.error("Failed to scrape Tebex page:", scrapeResult.description);
+      }
+      
+      console.log("Tebex content scraped:", {
+        title: scrapeResult.title,
+        markdownLength: scrapeResult.markdown.length,
+        hasScreenshot: !!scrapeResult.screenshot
       });
       
-      // Build message content with text and images
+      // Build message content with REAL scraped data
       const contentParts: any[] = [];
       
-      userPrompt = `I scraped this Tebex/store page for a FiveM script. Analyze all the information and recreate this script.
+      userPrompt = `I have SCRAPED this FiveM script store page. Here is the ACTUAL content from the page.
+ANALYZE EVERYTHING CAREFULLY and recreate this script EXACTLY as described.
 
 URL: ${tebexUrl}
 
-PAGE TITLE: ${tebexContent.title}
+PAGE TITLE: ${scrapeResult.title}
 
-PAGE DESCRIPTION: ${tebexContent.description}
+PAGE META DESCRIPTION: ${scrapeResult.description}
 
-FEATURES LISTED ON PAGE:
-${tebexContent.features.map((f, i) => `${i + 1}. ${f}`).join('\n')}
+=== FULL PAGE CONTENT (Markdown) ===
+${scrapeResult.markdown}
+=== END PAGE CONTENT ===
 
-Based on this REAL information from the store page, create a complete ${framework.toUpperCase()} script.
+Based on ALL the information above from the REAL store page, create a complete ${framework.toUpperCase()} script.
 Script name: ${scriptName}
 
-IMPORTANT: 
-- Create ALL features mentioned in the description and feature list
-- Match the functionality described on the store page EXACTLY
-- If the page mentions NUI/menu/interface, include it. Otherwise, don't add NUI.
+CRITICAL INSTRUCTIONS:
+- READ the scraped content CAREFULLY - it contains all the features and functionality described on the page
+- Create EVERY feature mentioned in the page content
+- Match the functionality described EXACTLY
+- If the page describes a UI/menu system, include NUI files
+- If the page mentions commands, implement those exact commands
+- If prices/features are listed, implement all those features
+- Make the script behave IDENTICALLY to what is described on the store page
 
 Generate each file with ### FILE: and ### END FILE markers.`;
 
       contentParts.push({ type: "text", text: userPrompt });
       
-      // Try to fetch and include images from the page
-      for (const imgUrl of tebexContent.images.slice(0, 3)) {
-        const base64 = await fetchImageAsBase64(imgUrl);
-        if (base64) {
-          contentParts.push({
-            type: "image_url",
-            image_url: { url: base64 }
-          });
-        }
+      // Include the screenshot from Firecrawl if available
+      if (scrapeResult.screenshot) {
+        console.log("Including Firecrawl screenshot for visual analysis");
+        contentParts.push({
+          type: "image_url",
+          image_url: { 
+            url: scrapeResult.screenshot.startsWith('data:') 
+              ? scrapeResult.screenshot 
+              : `data:image/png;base64,${scrapeResult.screenshot}` 
+          }
+        });
       }
       
       messageContent = contentParts;
