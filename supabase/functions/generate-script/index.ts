@@ -324,17 +324,30 @@ Generate each file with ### FILE: and ### END FILE markers.`;
 
       contentParts.push({ type: "text", text: userPrompt });
       
-      // Include the screenshot from Firecrawl if available
+      // Include the screenshot from Firecrawl if available - must convert URL to base64
       if (scrapeResult.screenshot) {
-        console.log("Including Firecrawl screenshot for visual analysis");
-        contentParts.push({
-          type: "image_url",
-          image_url: { 
-            url: scrapeResult.screenshot.startsWith('data:') 
-              ? scrapeResult.screenshot 
-              : `data:image/png;base64,${scrapeResult.screenshot}` 
+        console.log("Firecrawl screenshot URL found, fetching and converting to base64...");
+        
+        // Check if it's already base64 or if it's a URL
+        if (scrapeResult.screenshot.startsWith('data:')) {
+          // Already base64
+          contentParts.push({
+            type: "image_url",
+            image_url: { url: scrapeResult.screenshot }
+          });
+        } else {
+          // It's a URL - need to fetch and convert to base64
+          const base64Image = await fetchImageAsBase64(scrapeResult.screenshot);
+          if (base64Image) {
+            console.log("Screenshot converted to base64 successfully");
+            contentParts.push({
+              type: "image_url",
+              image_url: { url: base64Image }
+            });
+          } else {
+            console.log("Failed to convert screenshot to base64, skipping image");
           }
-        });
+        }
       }
       
       messageContent = contentParts;
