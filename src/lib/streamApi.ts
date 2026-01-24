@@ -69,15 +69,19 @@ export async function streamGenerateScript({
       });
 
       if (!response.ok || !response.body) {
-        if (response.status === 429) {
-          onError('Rate limit exceeded. Please try again later.');
-          return;
+        let msg = 'Falha ao iniciar a geração';
+        try {
+          const data = await response.json();
+          if (typeof data?.error === 'string' && data.error.trim()) msg = data.error;
+        } catch {
+          try {
+            const t = await response.text();
+            if (t.trim()) msg = t;
+          } catch {
+            // ignore
+          }
         }
-        if (response.status === 402) {
-          onError('Payment required. Please add credits.');
-          return;
-        }
-        onError('Failed to start generation');
+        onError(msg);
         return;
       }
 
