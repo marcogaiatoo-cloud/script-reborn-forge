@@ -46,235 +46,218 @@ function sanitizeScriptName(input: unknown): string {
     .slice(0, 48) || "my-script";
 }
 
-function chunkString(str: string, size: number): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < str.length; i += size) out.push(str.slice(i, i + size));
-  return out;
-}
-
-function guessNeedsDatabase(args: { description?: string; referenceFiles?: Array<{ path: string; content: string }> }): boolean {
-  const d = (args.description ?? "").toLowerCase();
-  if (/\b(mysql|sql|database|db|persist|save|guardar|registar|registro|armazenar)\b/.test(d)) return true;
-
-  for (const f of args.referenceFiles ?? []) {
-    const p = (f.path ?? "").toLowerCase();
-    const c = (f.content ?? "").toLowerCase();
-    if (p.endsWith(".sql")) return true;
-    if (c.includes("mysql.") || c.includes("oxmysql") || c.includes("mysql-async")) return true;
-  }
-
-  return false;
-}
-
-function buildFxmanifest(args: {
-  scriptName: string;
-  framework: Framework;
-  mysqlType: MySQLType;
-  libType: LibType;
-  needsDb: boolean;
-}): string {
-  const shared: string[] = [];
-  if (args.libType === "ox_lib") shared.push("@ox_lib/init.lua");
-  shared.push("config.lua");
-
-  const server: string[] = [];
-  if (args.needsDb) {
-    if (args.mysqlType === "mysql-async") server.push("@mysql-async/lib/MySQL.lua");
-    else server.push("@oxmysql/lib/MySQL.lua");
-  }
-  server.push("server/main.lua");
-
-  const lines: string[] = [
-    "-- Resource manifest for " + args.scriptName,
-    "fx_version 'cerulean'",
-    "game 'gta5'",
-    "",
-    `name '${args.scriptName}'`,
-    `description 'Generated template (${args.framework}, ${args.libType}${args.needsDb ? ", " + args.mysqlType : ""})'`,
-    "author 'Script Generator'",
-    "version '1.0.0'",
-    "",
-    "shared_scripts {",
-    ...shared.map((s) => `  '${s}',`),
-    "}",
-    "",
-    "client_scripts {",
-    "  'client/main.lua',",
-    "}",
-    "",
-    "server_scripts {",
-    ...server.map((s) => `  '${s}',`),
-    "}",
-  ];
-
-  return lines.join("\n") + "\n";
-}
-
-function buildConfigLua(args: { scriptName: string }): string {
-  return [
-    "-- Configuração do recurso",
-    "Config = Config or {}",
-    "",
-    `Config.Command = '${args.scriptName}' -- /${args.scriptName}`,
-    "Config.Debug = false",
-    "",
-  ].join("\n");
-}
-
-function buildClientMainLua(args: { scriptName: string; framework: Framework; libType: LibType }): string {
-  const lines: string[] = [];
-
-  lines.push("-- Cliente: comandos e notificações");
-  lines.push("local RESOURCE = GetCurrentResourceName()\n");
-
-  if (args.framework === "esx") {
-    lines.push("local ESX = exports['es_extended']:getSharedObject()\n");
-  } else if (args.framework === "qbcore") {
-    lines.push("local QBCore = exports['qb-core']:GetCoreObject()\n");
-  }
-
-  lines.push("local function notify(msg, nType)");
-  if (args.libType === "ox_lib") {
-    lines.push("  lib.notify({ title = RESOURCE, description = msg, type = nType or 'inform' })");
-  } else if (args.framework === "esx") {
-    lines.push("  ESX.ShowNotification(msg)");
-  } else if (args.framework === "qbcore") {
-    lines.push("  QBCore.Functions.Notify(msg, nType or 'primary')");
-  } else {
-    lines.push("  BeginTextCommandThefeedPost('STRING')");
-    lines.push("  AddTextComponentSubstringPlayerName(msg)");
-    lines.push("  EndTextCommandThefeedPostTicker(false, false)");
-  }
-  lines.push("end\n");
-
-  lines.push("RegisterCommand(Config.Command, function()");
-  lines.push("  TriggerServerEvent(RESOURCE .. ':ping')");
-  lines.push("end, false)\n");
-
-  lines.push("RegisterNetEvent(RESOURCE .. ':pong', function(serverTime)");
-  lines.push("  notify(('Gerado com sucesso! Hora do servidor: %s'):format(serverTime or '?'), 'success')");
-  lines.push("end)\n");
-
-  lines.push("CreateThread(function()" );
-  lines.push("  Wait(1000)");
-  lines.push("  notify(('Recurso %s iniciado. Usa /%s'):format(RESOURCE, Config.Command), 'inform')");
-  lines.push("end)");
-
-  return lines.join("\n") + "\n";
-}
-
-function buildServerMainLua(args: { scriptName: string; framework: Framework; needsDb: boolean; mysqlType: MySQLType }): string {
-  const lines: string[] = [];
-  lines.push("-- Servidor: validações e eventos");
-  lines.push("local RESOURCE = GetCurrentResourceName()\n");
-
-  if (args.framework === "esx") {
-    lines.push("local ESX = exports['es_extended']:getSharedObject()\n");
-  } else if (args.framework === "qbcore") {
-    lines.push("local QBCore = exports['qb-core']:GetCoreObject()\n");
-  }
-
-  if (args.needsDb) {
-    lines.push("-- Nota: Este template inclui base para DB (apenas se tiveres a lib instalada).\n");
-    lines.push("local function dbReady()" );
-    if (args.mysqlType === "mysql-async") {
-      lines.push("  return MySQL ~= nil and MySQL.Async ~= nil");
-    } else {
-      lines.push("  return MySQL ~= nil and (MySQL.query ~= nil or exports.oxmysql ~= nil)");
-    }
-    lines.push("end\n");
-  }
-
-  lines.push("RegisterNetEvent(RESOURCE .. ':ping', function()" );
-  lines.push("  local src = source" );
-  lines.push("  if type(src) ~= 'number' or src <= 0 then return end" );
-  lines.push("  local now = os.date('%Y-%m-%d %H:%M:%S')" );
-  lines.push("  TriggerClientEvent(RESOURCE .. ':pong', src, now)" );
-  lines.push("end)");
-
-  return lines.join("\n") + "\n";
-}
-
-function buildSqlInstall(args: { scriptName: string }): string {
-  const table = (args.scriptName || "my_script").replace(/[^a-z0-9_]/gi, "_");
-  return [
-    "-- SQL opcional (apenas se precisares de persistência)",
-    `CREATE TABLE IF NOT EXISTS \`${table}_data\` (`,
-    "  id INT NOT NULL AUTO_INCREMENT,",
-    "  identifier VARCHAR(64) NOT NULL,",
-    "  value TEXT NULL,",
-    "  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,",
-    "  PRIMARY KEY (id),",
-    "  KEY idx_identifier (identifier)",
-    ");",
-    "",
-  ].join("\n");
-}
-
-function generateBundle(args: {
+function buildSystemPrompt(args: {
   mode: Mode;
   framework: Framework;
-  scriptName: string;
   mysqlType: MySQLType;
   libType: LibType;
-  description?: string;
-  referenceFiles?: Array<{ path: string; content: string }>;
-  tebexUrl?: string;
-  videoUrl?: string;
-  images?: string[];
-  additionalContext?: string;
+  scriptName: string;
 }): string {
-  const needsDb = guessNeedsDatabase({ description: args.description, referenceFiles: args.referenceFiles });
+  const frameworkInstructions = {
+    esx: `
+- Use ESX framework patterns
+- Get ESX object: local ESX = exports['es_extended']:getSharedObject()
+- Use ESX.ShowNotification for notifications
+- Use ESX.GetPlayerData() on client
+- Use ESX.GetPlayerFromId(source) on server
+- Player identifiers: xPlayer.identifier`,
+    qbcore: `
+- Use QBCore framework patterns
+- Get QBCore: local QBCore = exports['qb-core']:GetCoreObject()
+- Use QBCore.Functions.Notify for notifications
+- Use QBCore.Functions.GetPlayerData() on client
+- Use QBCore.Functions.GetPlayer(source) on server
+- Player identifiers: Player.PlayerData.citizenid`,
+    standalone: `
+- No framework dependencies
+- Use native FiveM functions only
+- Use BeginTextCommandThefeedPost/EndTextCommandThefeedPostTicker for notifications
+- Store player data using license identifier from GetPlayerIdentifiers`
+  };
 
-  const readmeParts: string[] = [];
-  readmeParts.push(`# ${args.scriptName}`);
-  readmeParts.push("\nTemplate gerado automaticamente (sem dependência de serviços pagos).\n");
-  readmeParts.push(`- Framework: **${args.framework}**`);
-  readmeParts.push(`- Lib: **${args.libType}**`);
-  readmeParts.push(`- DB: **${needsDb ? args.mysqlType : "não"}**`);
-  readmeParts.push(`- Modo: **${args.mode}**\n`);
-  if (args.description) readmeParts.push("## Descrição\n" + args.description + "\n");
-  if (args.tebexUrl) readmeParts.push("## Tebex URL\n" + args.tebexUrl + "\n");
-  if (args.videoUrl) readmeParts.push("## Vídeo URL\n" + args.videoUrl + "\n");
-  if (args.additionalContext) readmeParts.push("## Contexto adicional\n" + args.additionalContext + "\n");
-  if ((args.referenceFiles ?? []).length) {
-    readmeParts.push("## Ficheiros de referência recebidos\n" + (args.referenceFiles ?? []).map((f) => `- ${f.path}`).join("\n") + "\n");
-  }
-  if ((args.images ?? []).length) {
-    readmeParts.push(`## Imagens recebidas\n- Total: ${(args.images ?? []).length}\n`);
-  }
-  readmeParts.push("## Como usar\n1) Coloca a pasta no teu servidor (resources)\n2) Adiciona ao server.cfg: `ensure " + args.scriptName + "`\n3) No jogo, usa: `" + "/" + args.scriptName + "`\n");
+  const mysqlInstructions = args.mysqlType === "oxmysql" 
+    ? `
+- Use oxmysql for database operations
+- Async: MySQL.query.await('SELECT...', {params})
+- Insert: MySQL.insert.await('INSERT...', {params})
+- Update: MySQL.update.await('UPDATE...', {params})
+- Scalar: MySQL.scalar.await('SELECT COUNT(*)...', {params})`
+    : `
+- Use mysql-async for database operations
+- Async: MySQL.Async.fetchAll('SELECT...', {params}, function(result) end)
+- Insert: MySQL.Async.insert('INSERT...', {params}, function(id) end)
+- Execute: MySQL.Async.execute('UPDATE/DELETE...', {params})`;
 
-  const files: Array<{ path: string; content: string }> = [
-    { path: "fxmanifest.lua", content: buildFxmanifest({ scriptName: args.scriptName, framework: args.framework, mysqlType: args.mysqlType, libType: args.libType, needsDb }) },
-    { path: "config.lua", content: buildConfigLua({ scriptName: args.scriptName }) + "\n" },
-    { path: "client/main.lua", content: buildClientMainLua({ scriptName: args.scriptName, framework: args.framework, libType: args.libType }) },
-    { path: "server/main.lua", content: buildServerMainLua({ scriptName: args.scriptName, framework: args.framework, needsDb, mysqlType: args.mysqlType }) },
-    { path: "README.md", content: readmeParts.join("\n") + "\n" },
-  ];
+  const libInstructions = args.libType === "ox_lib"
+    ? `
+- Use ox_lib for utilities
+- Add @ox_lib/init.lua to shared_scripts
+- Use lib.notify for notifications: lib.notify({ title = 'Title', description = 'Msg', type = 'success' })
+- Use lib.callback for client-server communication
+- Use lib.requestAnimDict, lib.requestModel for streaming
+- Use lib.progressBar, lib.progressCircle for progress UI
+- Use lib.registerContext, lib.showContext for context menus
+- Use lib.inputDialog for input forms`
+    : `
+- Use vanilla Lua and natives
+- Create custom notification functions
+- Use TriggerServerEvent/TriggerClientEvent for communication
+- Use RequestAnimDict with while not HasAnimDictLoaded loops
+- Build custom NUI menus if needed`;
 
-  if (needsDb) files.push({ path: "sql/install.sql", content: buildSqlInstall({ scriptName: args.scriptName }) + "\n" });
+  return `You are a SENIOR FiveM Lua developer with 10+ years of experience.
+You write PRODUCTION-READY, BUG-FREE, OPTIMIZED code.
 
-  // NOTE: The frontend parses files using these markers.
-  return files
-    .map((f) => `### FILE: ${f.path}\n${f.content}\n### END FILE\n`)
-    .join("\n");
+SCRIPT NAME: ${args.scriptName}
+MODE: ${args.mode}
+FRAMEWORK: ${args.framework}
+MySQL: ${args.mysqlType}
+Library: ${args.libType}
+
+${frameworkInstructions[args.framework]}
+${mysqlInstructions}
+${libInstructions}
+
+CRITICAL RULES:
+1. ANALYZE the user request DEEPLY - understand EXACTLY what they want
+2. Generate COMPLETE, WORKING code - no placeholders, no TODOs, no "add your code here"
+3. Every file must be PRODUCTION READY and tested mentally for edge cases
+4. Include proper error handling, nil checks, source validation on server
+5. Use proper Lua patterns: local variables, proper scoping, efficient loops
+6. NEVER generate code that could cause crashes or exploits
+7. Always validate source on server events: if type(source) ~= 'number' or source <= 0 then return end
+8. Use proper resource naming conventions
+9. Include helpful comments in Portuguese
+
+OUTPUT FORMAT - You MUST use this exact format for each file:
+
+### FILE: fxmanifest.lua
+<complete fxmanifest content>
+### END FILE
+
+### FILE: config.lua
+<complete config content>
+### END FILE
+
+### FILE: client/main.lua
+<complete client code>
+### END FILE
+
+### FILE: server/main.lua
+<complete server code>
+### END FILE
+
+Add sql/install.sql if database is needed.
+Add html/index.html, html/style.css, html/script.js if NUI is requested.
+
+IMPORTANT: Generate ALL files needed for a complete, working script.
+The code must work IMMEDIATELY when the user places it in their server.`;
 }
 
-function buildSseStream(content: string): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const chunks = chunkString(content, 700);
+function buildUserPrompt(args: {
+  mode: Mode;
+  description?: string;
+  referenceFiles?: Array<{ path: string; content: string }>;
+  images?: string[];
+  tebexUrl?: string;
+  videoUrl?: string;
+  additionalContext?: string;
+}): string {
+  const parts: string[] = [];
 
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) {
-        const payload = { choices: [{ delta: { content: chunk } }] };
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+  if (args.mode === "text" && args.description) {
+    parts.push(`Create a FiveM script based on this description:\n\n${args.description}`);
+  }
+
+  if (args.mode === "zip" && args.referenceFiles?.length) {
+    parts.push("Analyze and RECREATE this script with clean, optimized code:\n");
+    for (const f of args.referenceFiles) {
+      if (f.content.length < 15000) {
+        parts.push(`--- ${f.path} ---\n${f.content}\n`);
+      } else {
+        parts.push(`--- ${f.path} (truncated) ---\n${f.content.slice(0, 15000)}\n[...truncated...]\n`);
       }
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      controller.close();
+    }
+    parts.push("\nRecreate this script maintaining ALL functionality but with BETTER code quality.");
+  }
+
+  if (args.mode === "image" && args.images?.length) {
+    parts.push(`Analyze these ${args.images.length} image(s) showing a FiveM script and recreate the visible functionality.`);
+    if (args.description) parts.push(`\nAdditional context: ${args.description}`);
+  }
+
+  if (args.mode === "tebex" && args.tebexUrl) {
+    parts.push(`Analyze this Tebex/store URL and create a similar script:\n${args.tebexUrl}`);
+    if (args.additionalContext) parts.push(`\nPage content:\n${args.additionalContext}`);
+  }
+
+  if (args.mode === "video" && args.videoUrl) {
+    parts.push(`Create a script based on this video showing FiveM gameplay:\n${args.videoUrl}`);
+    if (args.description) parts.push(`\nDescription: ${args.description}`);
+  }
+
+  if (args.additionalContext && args.mode !== "tebex") {
+    parts.push(`\nAdditional context:\n${args.additionalContext}`);
+  }
+
+  return parts.join("\n") || "Create a basic FiveM resource template.";
+}
+
+async function streamOpenAI(
+  systemPrompt: string,
+  userPrompt: string,
+  images?: string[]
+): Promise<ReadableStream<Uint8Array>> {
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+  
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY not configured");
+  }
+
+  const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [
+    { role: "system", content: systemPrompt }
+  ];
+
+  // Handle images for image mode
+  if (images && images.length > 0) {
+    const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+      { type: "text", text: userPrompt }
+    ];
+    for (const img of images.slice(0, 4)) { // Max 4 images
+      contentParts.push({
+        type: "image_url",
+        image_url: { url: img }
+      });
+    }
+    messages.push({ role: "user", content: contentParts });
+  } else {
+    messages.push({ role: "user", content: userPrompt });
+  }
+
+  console.log("Calling OpenAI API with model gpt-4o-mini...");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages,
+      stream: true,
+      max_tokens: 16000,
+      temperature: 0.3, // Lower for more consistent code
+    }),
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("OpenAI API error:", response.status, errorText);
+    throw new Error(`OpenAI API error: ${response.status}`);
+  }
+
+  return response.body!;
 }
 
 serve(async (req) => {
@@ -282,10 +265,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Este endpoint responde SEMPRE com um stream SSE de ficheiros gerados,
-  // sem depender de serviços externos/pagos e sem lógica de pagamento.
   try {
-    let body: any = {};
+    let body: Record<string, unknown> = {};
     try {
       body = await req.json();
     } catch {
@@ -298,12 +279,11 @@ serve(async (req) => {
     const mysqlType = normalizeMySQLType(body.mysqlType);
     const libType = normalizeLibType(body.libType);
 
-    const bundle = generateBundle({
+    console.log(`Generating script: ${scriptName}, mode: ${mode}, framework: ${framework}`);
+
+    const systemPrompt = buildSystemPrompt({ mode, framework, mysqlType, libType, scriptName });
+    const userPrompt = buildUserPrompt({
       mode,
-      framework,
-      scriptName,
-      mysqlType,
-      libType,
       description: typeof body.description === "string" ? body.description : undefined,
       referenceFiles: Array.isArray(body.referenceFiles) ? body.referenceFiles : undefined,
       images: Array.isArray(body.images) ? body.images : undefined,
@@ -312,7 +292,36 @@ serve(async (req) => {
       additionalContext: typeof body.additionalContext === "string" ? body.additionalContext : undefined,
     });
 
-    return new Response(buildSseStream(bundle), {
+    const images = Array.isArray(body.images) ? body.images : undefined;
+    const openAIStream = await streamOpenAI(systemPrompt, userPrompt, images);
+
+    // Transform OpenAI stream format to our expected format
+    const transformStream = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        controller.enqueue(chunk);
+      },
+    });
+
+    const reader = openAIStream.getReader();
+    const writer = transformStream.writable.getWriter();
+
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            await writer.close();
+            break;
+          }
+          await writer.write(value);
+        }
+      } catch (error) {
+        console.error("Stream error:", error);
+        await writer.abort(error);
+      }
+    })();
+
+    return new Response(transformStream.readable, {
       status: 200,
       headers: {
         ...corsHeaders,
@@ -323,23 +332,16 @@ serve(async (req) => {
   } catch (error) {
     console.error("generate-script error:", error);
 
-    // Fallback: nunca falhar — devolve um bundle mínimo.
-    const fallback = generateBundle({
-      mode: "text",
-      framework: "standalone",
-      scriptName: "my-script",
-      mysqlType: "mysql-async",
-      libType: "default",
-      description: "Fallback bundle gerado após erro interno.",
-    });
-
-    return new Response(buildSseStream(fallback), {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-      },
-    });
+    // Return error as JSON
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      }
+    );
   }
 });
