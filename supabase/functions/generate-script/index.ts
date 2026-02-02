@@ -203,7 +203,71 @@ function buildUserPrompt(args: {
   return parts.join("\n") || "Create a basic FiveM resource template.";
 }
 
-async function streamOpenAI(
+async function streamWithLovableAI(
+  systemPrompt: string,
+  userPrompt: string,
+  images?: string[]
+): Promise<ReadableStream<Uint8Array>> {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  
+  if (!LOVABLE_API_KEY) {
+    throw new Error("LOVABLE_API_KEY not configured");
+  }
+
+  const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [
+    { role: "system", content: systemPrompt }
+  ];
+
+  // Handle images for image mode
+  if (images && images.length > 0) {
+    const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+      { type: "text", text: userPrompt }
+    ];
+    for (const img of images.slice(0, 4)) {
+      contentParts.push({
+        type: "image_url",
+        image_url: { url: img }
+      });
+    }
+    messages.push({ role: "user", content: contentParts });
+  } else {
+    messages.push({ role: "user", content: userPrompt });
+  }
+
+  console.log("Calling Lovable AI Gateway with model google/gemini-3-flash-preview...");
+
+  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-3-flash-preview",
+      messages,
+      stream: true,
+      max_tokens: 16000,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Lovable AI error:", response.status, errorText);
+    
+    if (response.status === 429) {
+      throw new Error("Limite de pedidos excedido. Tenta novamente em alguns segundos.");
+    }
+    if (response.status === 402) {
+      throw new Error("Créditos esgotados. Adiciona créditos em Settings → Workspace → Usage.");
+    }
+    throw new Error(`AI error: ${response.status}`);
+  }
+
+  return response.body!;
+}
+
+async function streamWithOpenAI(
   systemPrompt: string,
   userPrompt: string,
   images?: string[]
@@ -218,12 +282,11 @@ async function streamOpenAI(
     { role: "system", content: systemPrompt }
   ];
 
-  // Handle images for image mode
   if (images && images.length > 0) {
     const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
       { type: "text", text: userPrompt }
     ];
-    for (const img of images.slice(0, 4)) { // Max 4 images
+    for (const img of images.slice(0, 4)) {
       contentParts.push({
         type: "image_url",
         image_url: { url: img }
@@ -247,7 +310,7 @@ async function streamOpenAI(
       messages,
       stream: true,
       max_tokens: 16000,
-      temperature: 0.3, // Lower for more consistent code
+      temperature: 0.3,
     }),
   });
 
@@ -258,6 +321,25 @@ async function streamOpenAI(
   }
 
   return response.body!;
+}
+
+async function getAIStream(
+  systemPrompt: string,
+  userPrompt: string,
+  images?: string[]
+): Promise<ReadableStream<Uint8Array>> {
+  // Try OpenAI first if configured
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+  if (OPENAI_API_KEY && OPENAI_API_KEY.startsWith("sk-")) {
+    try {
+      return await streamWithOpenAI(systemPrompt, userPrompt, images);
+    } catch (error) {
+      console.log("OpenAI failed, falling back to Lovable AI:", error);
+    }
+  }
+
+  // Fallback to Lovable AI
+  return await streamWithLovableAI(systemPrompt, userPrompt, images);
 }
 
 serve(async (req) => {
@@ -293,16 +375,16 @@ serve(async (req) => {
     });
 
     const images = Array.isArray(body.images) ? body.images : undefined;
-    const openAIStream = await streamOpenAI(systemPrompt, userPrompt, images);
+    const aiStream = await getAIStream(systemPrompt, userPrompt, images);
 
-    // Transform OpenAI stream format to our expected format
+    // Pass through the stream
     const transformStream = new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         controller.enqueue(chunk);
       },
     });
 
-    const reader = openAIStream.getReader();
+    const reader = aiStream.getReader();
     const writer = transformStream.writable.getWriter();
 
     (async () => {
@@ -332,7 +414,6 @@ serve(async (req) => {
   } catch (error) {
     console.error("generate-script error:", error);
 
-    // Return error as JSON
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
       {
