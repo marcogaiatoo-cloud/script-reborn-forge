@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 type Mode = "zip" | "text" | "image" | "tebex" | "video";
@@ -105,6 +105,15 @@ function buildSystemPrompt(args: {
 - Use RequestAnimDict with while not HasAnimDictLoaded loops
 - Build custom NUI menus if needed`;
 
+  const tebexModeRules = args.mode === "tebex" ? `
+TEBEX MODE (OBRIGATÓRIO):
+- Use o conteúdo extraído da página (markdown) e screenshots como FONTE DE VERDADE
+- NÃO inventes features: se não estiver na página/screenshot, não assumes
+- Extrai e implementa: features, comandos, itens, menus/UI, exports, events, permissões, dependências
+- Se houver variações/planos/edições, cria toggles em config.lua
+- Se a página mencionar requisitos (ox_lib/oxmysql/etc.), ajusta fxmanifest e o código de acordo
+` : "";
+
   return `You are a SENIOR FiveM Lua developer with 10+ years of experience.
 You write PRODUCTION-READY, BUG-FREE, OPTIMIZED code.
 
@@ -113,6 +122,8 @@ MODE: ${args.mode}
 FRAMEWORK: ${args.framework}
 MySQL: ${args.mysqlType}
 Library: ${args.libType}
+
+${tebexModeRules}
 
 ${frameworkInstructions[args.framework]}
 ${mysqlInstructions}
@@ -234,7 +245,7 @@ async function streamWithLovableAI(
     messages.push({ role: "user", content: userPrompt });
   }
 
-  console.log("Calling Lovable AI Gateway with model google/gemini-3-flash-preview...");
+  console.log("AI provider: Lovable Gateway (google/gemini-3-flash-preview)");
 
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -297,7 +308,7 @@ async function streamWithOpenAI(
     messages.push({ role: "user", content: userPrompt });
   }
 
-  console.log("Calling OpenAI API with model gpt-4o-mini...");
+  console.log("AI provider: OpenAI (gpt-4o-mini)");
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
