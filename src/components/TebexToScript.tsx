@@ -10,6 +10,7 @@ import CodeBlock from './CodeBlock';
 import { streamGenerateScript, ScriptFile } from '@/lib/streamApi';
 import JSZip from 'jszip';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 const TebexToScript = () => {
   const [tebexUrl, setTebexUrl] = useState('');
@@ -47,10 +48,58 @@ const TebexToScript = () => {
     }
 
     setIsGenerating(true);
-    setStreamingText('');
+    setStreamingText('A analisar a página do script...\n');
     setGeneratedFiles([]);
 
     try {
+      // 1) Scrape da página (markdown + screenshot) para o AI trabalhar com dados reais
+      let scrapedContext: string | undefined;
+      let scrapedImages: string[] | undefined;
+
+      try {
+        const { data, error } = await supabase.functions.invoke('firecrawl-scrape', {
+          body: {
+            url: tebexUrl,
+            options: {
+              formats: ['markdown', 'screenshot'],
+              onlyMainContent: true,
+              waitFor: 4000,
+            },
+          },
+        });
+
+        if (error) throw error;
+
+        // Firecrawl costuma devolver { success, data: { markdown, screenshot, ... } }
+        const markdown: string | undefined =
+          data?.data?.markdown ?? data?.markdown ?? data?.data?.data?.markdown;
+        const screenshot: unknown =
+          data?.data?.screenshot ?? data?.screenshot ?? data?.data?.data?.screenshot;
+
+        if (typeof markdown === 'string' && markdown.trim()) {
+          // Evitar prompts gigantes (limite prático para não rebentar tokens)
+          const trimmed = markdown.slice(0, 45000);
+          scrapedContext =
+            `CONTEÚDO EXTRAÍDO DA PÁGINA (FONTE DE VERDADE):\n` +
+            `- Baseia o script no que está descrito aqui.\n` +
+            `- Se houver comandos/itens/config/permissions/UI, implementa exatamente.\n\n` +
+            trimmed;
+        }
+
+        if (typeof screenshot === 'string' && /^https?:\/\//i.test(screenshot)) {
+          scrapedImages = [screenshot];
+        }
+
+        if (scrapedContext) {
+          setStreamingText((prev) => prev + 'Página analisada. A gerar script com base no conteúdo real...\n\n');
+        } else {
+          setStreamingText((prev) => prev + 'Não foi possível extrair texto útil da página. A gerar apenas pelo link...\n\n');
+        }
+      } catch (e) {
+        console.warn('firecrawl-scrape falhou:', e);
+        setStreamingText((prev) => prev + 'Falha ao analisar a página. A gerar apenas pelo link...\n\n');
+      }
+
       const { abort } = await streamGenerateScript({
         mode: 'tebex',
         framework,
@@ -58,6 +107,8 @@ const TebexToScript = () => {
         mysqlType,
         libType,
         tebexUrl,
+        additionalContext: scrapedContext,
+        images: scrapedImages,
         onChunk: (text) => setStreamingText(prev => prev + text),
         onFile: (file) => setGeneratedFiles(prev => [...prev, file]),
         onError: (error) => toast.error(error),
