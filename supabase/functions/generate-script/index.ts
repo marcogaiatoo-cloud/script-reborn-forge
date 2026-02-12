@@ -129,16 +129,32 @@ ${frameworkInstructions[args.framework]}
 ${mysqlInstructions}
 ${libInstructions}
 
-CRITICAL RULES:
+CRITICAL RULES (OBRIGATÓRIO - NUNCA QUEBRAR):
 1. ANALYZE the user request DEEPLY - understand EXACTLY what they want
-2. Generate COMPLETE, WORKING code - no placeholders, no TODOs, no "add your code here"
-3. Every file must be PRODUCTION READY and tested mentally for edge cases
-4. Include proper error handling, nil checks, source validation on server
-5. Use proper Lua patterns: local variables, proper scoping, efficient loops
-6. NEVER generate code that could cause crashes or exploits
-7. Always validate source on server events: if type(source) ~= 'number' or source <= 0 then return end
-8. Use proper resource naming conventions
-9. Include helpful comments in Portuguese
+2. YOU ARE THE DEVELOPER. Write ALL the code yourself. NEVER tell the user to write code, NEVER say "add your logic here", NEVER leave placeholders.
+3. Generate COMPLETE, FULLY FUNCTIONAL code for EVERY file - no placeholders, no TODOs, no "add your code here", no "implement this", no shortcuts
+4. Every file must be PRODUCTION READY with REAL, WORKING logic - not skeleton code
+5. Include proper error handling, nil checks, source validation on server
+6. Use proper Lua patterns: local variables, proper scoping, efficient loops
+7. NEVER generate code that could cause crashes or exploits
+8. Always validate source on server events: if type(source) ~= 'number' or source <= 0 then return end
+9. Use proper resource naming conventions
+10. Include helpful comments in Portuguese
+11. If the script needs menus, create REAL menus with ALL options working
+12. If the script needs database, write ALL queries, ALL tables, ALL CRUD operations
+13. If the script needs commands, implement ALL command handlers with FULL logic
+14. EVERY function must have REAL implementation - no empty functions, no stubs
+15. The code must be 100% ready to drag-and-drop into a FiveM server and work IMMEDIATELY
+
+FORBIDDEN (NUNCA FAZER):
+- "-- Add your code here"
+- "-- TODO: implement"  
+- "-- Configure as needed"
+- "You can add more..."
+- "Implement your own..."
+- Any suggestion for the user to write code themselves
+- Empty function bodies
+- Placeholder values that need to be changed
 
 OUTPUT FORMAT - You MUST use this exact format for each file:
 
@@ -147,22 +163,22 @@ OUTPUT FORMAT - You MUST use this exact format for each file:
 ### END FILE
 
 ### FILE: config.lua
-<complete config content>
+<complete config content with ALL configurable values filled in with sensible defaults>
 ### END FILE
 
 ### FILE: client/main.lua
-<complete client code>
+<complete client code with ALL functions fully implemented>
 ### END FILE
 
 ### FILE: server/main.lua
-<complete server code>
+<complete server code with ALL functions fully implemented>
 ### END FILE
 
-Add sql/install.sql if database is needed.
-Add html/index.html, html/style.css, html/script.js if NUI is requested.
+Add sql/install.sql if database is needed (with complete CREATE TABLE statements).
+Add html/index.html, html/style.css, html/script.js ONLY if NUI is explicitly requested.
 
 IMPORTANT: Generate ALL files needed for a complete, working script.
-The code must work IMMEDIATELY when the user places it in their server.`;
+The code must work IMMEDIATELY when the user places it in their server. YOU write ALL the code.`;
 }
 
 function buildUserPrompt(args: {
