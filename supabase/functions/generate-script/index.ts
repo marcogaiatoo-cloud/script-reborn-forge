@@ -214,69 +214,7 @@ function buildUserPrompt(args: {
   return parts.join("\n") || "Create a basic FiveM resource template.";
 }
 
-async function streamWithLovableAI(
-  systemPrompt: string,
-  userPrompt: string,
-  images?: string[]
-): Promise<ReadableStream<Uint8Array>> {
-  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-  
-  if (!LOVABLE_API_KEY) {
-    throw new Error("LOVABLE_API_KEY not configured");
-  }
-
-  const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [
-    { role: "system", content: systemPrompt }
-  ];
-
-  // Handle images for image mode
-  if (images && images.length > 0) {
-    const contentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-      { type: "text", text: userPrompt }
-    ];
-    for (const img of images.slice(0, 4)) {
-      contentParts.push({
-        type: "image_url",
-        image_url: { url: img }
-      });
-    }
-    messages.push({ role: "user", content: contentParts });
-  } else {
-    messages.push({ role: "user", content: userPrompt });
-  }
-
-  console.log("AI provider: Lovable Gateway (google/gemini-3-flash-preview)");
-
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages,
-      stream: true,
-      max_tokens: 16000,
-      temperature: 0.3,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Lovable AI error:", response.status, errorText);
-    
-    if (response.status === 429) {
-      throw new Error("Limite de pedidos excedido. Tenta novamente em alguns segundos.");
-    }
-    if (response.status === 402) {
-      throw new Error("Créditos esgotados. Adiciona créditos em Settings → Workspace → Usage.");
-    }
-    throw new Error(`AI error: ${response.status}`);
-  }
-
-  return response.body!;
-}
+// Lovable AI removed - only external providers (OpenAI, Groq) to avoid credit usage
 
 async function streamWithOpenAI(
   systemPrompt: string,
@@ -284,10 +222,7 @@ async function streamWithOpenAI(
   images?: string[]
 ): Promise<ReadableStream<Uint8Array>> {
   const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-  
-  if (!OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY not configured");
-  }
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not configured");
 
   const messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> = [
     { role: "system", content: systemPrompt }
@@ -298,10 +233,7 @@ async function streamWithOpenAI(
       { type: "text", text: userPrompt }
     ];
     for (const img of images.slice(0, 4)) {
-      contentParts.push({
-        type: "image_url",
-        image_url: { url: img }
-      });
+      contentParts.push({ type: "image_url", image_url: { url: img } });
     }
     messages.push({ role: "user", content: contentParts });
   } else {
@@ -309,20 +241,10 @@ async function streamWithOpenAI(
   }
 
   console.log("AI provider: OpenAI (gpt-4o-mini)");
-
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages,
-      stream: true,
-      max_tokens: 16000,
-      temperature: 0.3,
-    }),
+    headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "gpt-4o-mini", messages, stream: true, max_tokens: 16000, temperature: 0.3 }),
   });
 
   if (!response.ok) {
@@ -330,7 +252,38 @@ async function streamWithOpenAI(
     console.error("OpenAI API error:", response.status, errorText);
     throw new Error(`OpenAI API error: ${response.status}`);
   }
+  return response.body!;
+}
 
+async function streamWithGroq(
+  systemPrompt: string,
+  userPrompt: string,
+  _images?: string[]
+): Promise<ReadableStream<Uint8Array>> {
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not configured");
+
+  // Groq doesn't support vision well, so text-only
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+
+  console.log("AI provider: Groq (llama-3.3-70b-versatile)");
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, stream: true, max_tokens: 16000, temperature: 0.3 }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Groq API error:", response.status, errorText);
+    if (response.status === 429) {
+      throw new Error("Groq rate limit atingido. Aguarda alguns segundos e tenta novamente.");
+    }
+    throw new Error(`Groq API error: ${response.status}`);
+  }
   return response.body!;
 }
 
@@ -339,18 +292,19 @@ async function getAIStream(
   userPrompt: string,
   images?: string[]
 ): Promise<ReadableStream<Uint8Array>> {
-  // Try OpenAI first if configured
+  // Try OpenAI if configured
   const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
   if (OPENAI_API_KEY && OPENAI_API_KEY.startsWith("sk-")) {
-    try {
-      return await streamWithOpenAI(systemPrompt, userPrompt, images);
-    } catch (error) {
-      console.log("OpenAI failed, falling back to Lovable AI:", error);
-    }
+    return await streamWithOpenAI(systemPrompt, userPrompt, images);
   }
 
-  // Fallback to Lovable AI
-  return await streamWithLovableAI(systemPrompt, userPrompt, images);
+  // Try Groq if configured
+  const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+  if (GROQ_API_KEY && GROQ_API_KEY.startsWith("gsk_")) {
+    return await streamWithGroq(systemPrompt, userPrompt, images);
+  }
+
+  throw new Error("Nenhuma API key de IA configurada. Adiciona OPENAI_API_KEY ou GROQ_API_KEY nos secrets do projeto.");
 }
 
 serve(async (req) => {
