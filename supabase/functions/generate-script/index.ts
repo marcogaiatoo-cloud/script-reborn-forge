@@ -289,7 +289,7 @@ async function streamWithGroq(
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, stream: true, max_tokens: 16000, temperature: 0.3 }),
+    body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, stream: true, max_tokens: 32000, temperature: 0.2 }),
   });
 
   if (!response.ok) {
