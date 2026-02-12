@@ -292,16 +292,16 @@ async function getAIStream(
   userPrompt: string,
   images?: string[]
 ): Promise<ReadableStream<Uint8Array>> {
-  // Try OpenAI if configured
-  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-  if (OPENAI_API_KEY && OPENAI_API_KEY.startsWith("sk-")) {
-    return await streamWithOpenAI(systemPrompt, userPrompt, images);
-  }
-
-  // Try Groq if configured
+  // Try Groq first (free tier)
   const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
   if (GROQ_API_KEY && GROQ_API_KEY.startsWith("gsk_")) {
     return await streamWithGroq(systemPrompt, userPrompt, images);
+  }
+
+  // Fallback to OpenAI
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+  if (OPENAI_API_KEY && OPENAI_API_KEY.startsWith("sk-")) {
+    return await streamWithOpenAI(systemPrompt, userPrompt, images);
   }
 
   throw new Error("Nenhuma API key de IA configurada. Adiciona OPENAI_API_KEY ou GROQ_API_KEY nos secrets do projeto.");
